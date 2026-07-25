@@ -14,6 +14,13 @@ import { triggerInvisibleContinue } from "../core/invisible-continue";
 import { isProactiveTriggerActive } from "./proactive-threshold";
 import { countPiVccCompactionsFromSession, ordinalSuffix } from "../core/compaction-count";
 import type { PiVccCompactionDetails } from "../details";
+import {
+  SEMANTIC_MEMORY_CUSTOM_TYPE,
+  SemanticCompactionError,
+  runSemanticCompaction,
+  semanticFailureCode,
+  stripSemanticSummary,
+} from "../semantic/memory";
 
 export const PI_VCC_COMPACT_INSTRUCTION = "__pi_vcc__";
 
@@ -646,7 +653,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
 
     const compileInput: CompileInput = {
       messages,
-      previousSummary: preparation.previousSummary,
+      previousSummary: stripSemanticSummary(preparation.previousSummary),
       fileOps: {
         readFiles: [...preparation.fileOps.read],
         modifiedFiles: [...preparation.fileOps.written, ...preparation.fileOps.edited],
@@ -711,7 +718,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     // discarded by the runner's short-circuit.
     (event as any)._piVccOverriding = true;
 
-    return {
+    const baseResult = {
       compaction: {
         summary,
         details,
@@ -719,6 +726,47 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
         firstKeptEntryId,
       },
     };
+
+    if (!settings.semanticCompaction.enabled) return baseResult;
+
+    const entryIdByMessage = new Map<unknown, string>();
+    for (const entry of branchEntries as any[]) {
+      if (entry?.type === "message" && entry.message && typeof entry.id === "string") {
+        entryIdByMessage.set(entry.message, entry.id);
+      }
+    }
+    const semanticSources = agentMessages.map((message: any) => ({
+      entryId: entryIdByMessage.get(message),
+      message,
+    }));
+
+    return runSemanticCompaction({
+      settings: settings.semanticCompaction,
+      branchEntries: branchEntries as any[],
+      sources: semanticSources,
+      signal: (event as any).signal,
+    }).then(({ memory, rendered }) => {
+      try {
+        pi.appendEntry(SEMANTIC_MEMORY_CUSTOM_TYPE, memory);
+      } catch {
+        throw new SemanticCompactionError("persistence");
+      }
+      if (!rendered) return baseResult;
+      return {
+        compaction: {
+          ...baseResult.compaction,
+          summary: `${summary}\n\n${rendered}`,
+        },
+      };
+    }).catch((error: unknown) => {
+      try {
+        ctx?.ui?.notify?.(
+          `pi-vcc: semantic compaction failed (${semanticFailureCode(error)}); using VCC-only output`,
+          "warning",
+        );
+      } catch {}
+      return baseResult;
+    });
   });
 
   pi.on("session_start", () => {

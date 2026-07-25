@@ -585,7 +585,19 @@ Config lives at `~/.pi/agent/pi-vcc-config.json` (auto-scaffolded on first load 
     "neuralwatt/moonshotai/Kimi-K2.6": { "compactPercent": 65 },
     "neuralwatt/glm-5.1-long": { "compactAtTokens": 150000 }
   },
-  "globalThreshold": { "compactAtTokens": 150000 }
+  "globalThreshold": { "compactAtTokens": 150000 },
+  "semanticCompaction": {
+    "enabled": false,
+    "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+    "model": "default",
+    "apiKey": "",
+    "timeoutMs": 30000,
+    "maxInputChars": 80000,
+    "maxOutputTokens": 1600,
+    "temperature": 0.1,
+    "includeToolMetadata": true,
+    "failureMode": "vcc-only"
+  }
 }
 ```
 
@@ -598,6 +610,43 @@ Config lives at `~/.pi/agent/pi-vcc-config.json` (auto-scaffolded on first load 
   - **`keepRecentTokens`** *(optional)*: advisory token budget for pi-core's default compaction. Pi-vcc's own `buildOwnCut` uses task-boundary heuristics, so this only affects pi-core's cut when `overrideDefaultCompaction` is `false`.
 - **`globalThreshold`** *(default: none)*: global threshold applied to all models not matched by `modelThresholds`. Uses `reserveTokens`, `compactAtTokens`, or `compactPercent`. If omitted, pi-core's global `compaction.reserveTokens` applies (no override).
 - **`defaultThreshold`** *(default: none, deprecated)*: use `globalThreshold` instead. Backward compatible — still works.
+- **`semanticCompaction`** *(default: disabled)*: optionally adds validated semantic decision memory after the deterministic VCC summary. See below.
+
+### Optional hybrid semantic compaction
+
+Hybrid semantic compaction adds an interpretative memory layer for goals, decisions and rationales, rejected approaches, open questions, blockers, and durable user preferences. The trust boundary is strict:
+
+1. The existing deterministic VCC output remains authoritative for exact facts such as paths, commands, errors, ports, model names, configuration values, and turn order.
+2. The semantic model may only add interpretative memory. It never rewrites or replaces the VCC output.
+3. Model output is parsed as JSON, checked against a closed versioned schema, normalized, and rendered by pi-vcc. Free-form model Markdown is never appended.
+4. Any endpoint, timeout, abort, HTTP, JSON, schema, or persistence failure returns the normal VCC-only compaction result.
+
+The semantic pass runs only when pi-vcc itself compiles the summary. It does not take over compactions delegated to pi core or pi-fabric. The state is stored as a versioned Pi custom session entry, which does not participate directly in model context and follows the active session branch. Only validated state is persisted.
+
+The default endpoint works with an OpenAI-compatible local server such as llama.cpp:
+
+```json
+{
+  "semanticCompaction": {
+    "enabled": true,
+    "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+    "model": "default",
+    "apiKey": "",
+    "timeoutMs": 30000,
+    "maxInputChars": 80000,
+    "maxOutputTokens": 1600,
+    "temperature": 0.1,
+    "includeToolMetadata": true,
+    "failureMode": "vcc-only"
+  }
+}
+```
+
+`apiKey` is optional, so localhost works without authentication. When it is non-empty, pi-vcc sends it as a Bearer token and never includes it in warnings or debug output. `includeToolMetadata` controls compact tool names, selected short arguments, and success/error hints; complete tool results, file contents, diffs, logs, images, and thinking blocks are not sent.
+
+**Privacy:** a remote endpoint receives filtered user messages and assistant prose from the portion of the session being compacted, plus the prior semantic state. Only enable a remote URL when that disclosure is acceptable. Prompts and raw model responses are not logged by this feature.
+
+Known MVP limitations: updates happen only during pi-vcc compaction; there is no semantic recall endpoint, embedding search, cross-session/global memory, confidence scoring, knowledge graph, or automatic multi-compaction reconsolidation.
 
 ### How compaction thresholds work
 

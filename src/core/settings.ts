@@ -88,11 +88,97 @@ export interface PiVccSettings {
    * @deprecated Use globalThreshold instead.
    */
   defaultThreshold?: ModelThreshold;
+  /**
+   * Optional interpretative memory pass that runs after the deterministic
+   * pi-vcc compiler. Disabled by default and always fails open to VCC-only.
+   */
+  semanticCompaction?: SemanticCompactionSettings;
 }
 
-const DEFAULT_SETTINGS: PiVccSettings = {
+export interface SemanticCompactionSettings {
+  enabled: boolean;
+  endpoint: string;
+  model: string;
+  apiKey: string;
+  timeoutMs: number;
+  maxInputChars: number;
+  maxOutputTokens: number;
+  temperature: number;
+  includeToolMetadata: boolean;
+  failureMode: "vcc-only";
+}
+
+const DEFAULT_SEMANTIC_COMPACTION_SETTINGS: SemanticCompactionSettings = {
+  enabled: false,
+  endpoint: "http://127.0.0.1:8080/v1/chat/completions",
+  model: "default",
+  apiKey: "",
+  timeoutMs: 30000,
+  maxInputChars: 80000,
+  maxOutputTokens: 1600,
+  temperature: 0.1,
+  includeToolMetadata: true,
+  failureMode: "vcc-only",
+};
+
+type LoadedPiVccSettings = Omit<PiVccSettings, "semanticCompaction"> & {
+  semanticCompaction: SemanticCompactionSettings;
+};
+
+const DEFAULT_SETTINGS: LoadedPiVccSettings = {
   overrideDefaultCompaction: true,
   debug: false,
+  semanticCompaction: DEFAULT_SEMANTIC_COMPACTION_SETTINGS,
+};
+
+const finiteNumber = (
+  value: unknown,
+  fallback: number,
+  options: { min: number; max: number; integer?: boolean },
+): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  if (value < options.min || value > options.max) return fallback;
+  return options.integer ? Math.round(value) : value;
+};
+
+const normalizeSemanticCompactionSettings = (
+  value: unknown,
+): SemanticCompactionSettings => {
+  const candidate = value && typeof value === "object"
+    ? value as Partial<SemanticCompactionSettings>
+    : {};
+  const defaults = DEFAULT_SEMANTIC_COMPACTION_SETTINGS;
+  return {
+    enabled: candidate.enabled === true,
+    endpoint: typeof candidate.endpoint === "string" && candidate.endpoint.trim()
+      ? candidate.endpoint.trim()
+      : defaults.endpoint,
+    model: typeof candidate.model === "string" && candidate.model.trim()
+      ? candidate.model.trim()
+      : defaults.model,
+    apiKey: typeof candidate.apiKey === "string" ? candidate.apiKey : defaults.apiKey,
+    timeoutMs: finiteNumber(candidate.timeoutMs, defaults.timeoutMs, {
+      min: 1,
+      max: 300000,
+      integer: true,
+    }),
+    maxInputChars: finiteNumber(candidate.maxInputChars, defaults.maxInputChars, {
+      min: 1000,
+      max: 1000000,
+      integer: true,
+    }),
+    maxOutputTokens: finiteNumber(candidate.maxOutputTokens, defaults.maxOutputTokens, {
+      min: 1,
+      max: 32768,
+      integer: true,
+    }),
+    temperature: finiteNumber(candidate.temperature, defaults.temperature, {
+      min: 0,
+      max: 2,
+    }),
+    includeToolMetadata: candidate.includeToolMetadata !== false,
+    failureMode: "vcc-only",
+  };
 };
 
 /**
@@ -207,10 +293,21 @@ export function isPiCoreCompactionEnabled(projectCwd?: string): boolean {
   return true;
 }
 
-export function loadSettings(): PiVccSettings {
+export function loadSettings(): LoadedPiVccSettings {
   const parsed = readJson(settingsPath());
-  if (!parsed || typeof parsed !== "object") return { ...DEFAULT_SETTINGS };
-  const loaded = { ...DEFAULT_SETTINGS, ...(parsed as Partial<PiVccSettings>) };
+  if (!parsed || typeof parsed !== "object") {
+    return {
+      ...DEFAULT_SETTINGS,
+      semanticCompaction: { ...DEFAULT_SEMANTIC_COMPACTION_SETTINGS },
+    };
+  }
+  const loaded: LoadedPiVccSettings = {
+    ...DEFAULT_SETTINGS,
+    ...(parsed as Partial<PiVccSettings>),
+    semanticCompaction: normalizeSemanticCompactionSettings(
+      (parsed as Partial<PiVccSettings>).semanticCompaction,
+    ),
+  };
   // Backward compat: defaultThreshold → globalThreshold
   if (!loaded.globalThreshold && (parsed as any).defaultThreshold) {
     loaded.globalThreshold = (parsed as any).defaultThreshold;
