@@ -16,4 +16,11 @@ export interface PiVccCompactionDetails {
   keptCount?: number;
   /** Estimated token count of kept tail */
   keptTokensEst?: number;
+  /** Outcome of the optional semantic memory pass. */
+  semanticCompaction?: {
+    status: "success" | "empty" | "failed";
+    model?: string;
+    failureCode?: string;
+    durationMs: number;
+  };
 }

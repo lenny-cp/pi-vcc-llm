@@ -13,6 +13,26 @@ describe("outstanding context: deep error extraction", () => {
     expect(r.outstandingContext[0]).toContain("npm test");
   });
 
+  it("marks an identical failed bash command resolved after a successful rerun", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "bash", command: "npm test", output: "1 failed", exitCode: 1 },
+      { kind: "bash", command: "npm test", output: "10 passed", exitCode: 0 },
+    ];
+    const r = buildSections({ blocks });
+    expect(r.outstandingContext[0]).toContain("[RESOLVED]");
+  });
+
+  it("marks a failed edit resolved after the same edit succeeds", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "tool_call", name: "edit", args: { path: "src/auth.ts" } },
+      { kind: "tool_result", name: "edit", text: "old text not found", isError: true },
+      { kind: "tool_call", name: "edit", args: { path: "src/auth.ts" } },
+      { kind: "tool_result", name: "edit", text: "updated", isError: false },
+    ];
+    const r = buildSections({ blocks });
+    expect(r.outstandingContext[0]).toContain("[RESOLVED]");
+  });
+
   it("captures bash non-zero exit code with output context", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "bash", command: "cargo build", output: "error: could not compile", exitCode: 101 },

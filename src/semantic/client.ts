@@ -19,9 +19,17 @@ export interface SemanticCompletionPrompts {
   user: string;
 }
 
+export interface SemanticJsonSchema {
+  name: string;
+  schema: Record<string, unknown>;
+}
+
 export const requestSemanticCompletion = async (options: {
   settings: SemanticCompactionSettings;
+  /** Active pi model ID. Falls back to the legacy configured model for direct callers. */
+  model?: string;
   prompts: SemanticCompletionPrompts;
+  jsonSchema?: SemanticJsonSchema;
   signal?: AbortSignal;
   fetchImpl?: typeof fetch;
 }): Promise<string> => {
@@ -49,13 +57,29 @@ export const requestSemanticCompletion = async (options: {
         headers,
         signal: controller.signal,
         body: JSON.stringify({
-          model: options.settings.model,
+          model: options.model ?? options.settings.model,
           messages: [
             { role: "system", content: options.prompts.system },
             { role: "user", content: options.prompts.user },
           ],
           max_tokens: options.settings.maxOutputTokens,
           temperature: options.settings.temperature,
+          presence_penalty: 0,
+          ...(options.settings.disableThinking
+            ? { chat_template_kwargs: { enable_thinking: false } }
+            : {}),
+          ...(options.jsonSchema
+            ? {
+                response_format: {
+                  type: "json_schema",
+                  json_schema: {
+                    name: options.jsonSchema.name,
+                    strict: true,
+                    schema: options.jsonSchema.schema,
+                  },
+                },
+              }
+            : {}),
         }),
       });
     } catch {

@@ -400,7 +400,7 @@ describe("causal v2 comparison", () => {
     }
   });
 
-  test("causal breadcrumbs carry resolution keys, not just filenames", () => {
+  test("keeps recent causal turns directly without recursive recall breadcrumbs", () => {
     let prev = "";
     for (let i = 0; i < TOTAL; i++) {
       prev = compile({ messages: makeRound(i), previousSummary: prev || undefined });
@@ -421,6 +421,9 @@ describe("causal v2 comparison", () => {
     }
 
     console.log(`\nBreadcrumb quality: ${causalBreadcrumbs} causal (file|key), ${keywordBreadcrumbs} keyword-only`);
-    expect(causalBreadcrumbs).toBeGreaterThan(0);
+    const latest = ROUNDS[(TOTAL - 1) % ROUNDS.length];
+    expect(causalBreadcrumbs).toBe(0);
+    expect(prev).toContain(latest.cause.slice(0, 24));
+    expect(prev).toContain(latest.resolution.slice(0, 24));
   });
 });

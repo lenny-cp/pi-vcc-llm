@@ -35,7 +35,7 @@ describe("breadcrumbs: mergeHeaderSection", () => {
     expect(r).not.toContain("...recall:");
   });
 
-  it("leaves breadcrumbs for Earlier Turns when cap exceeded", () => {
+  it("drops old Earlier Turns without adding recursive recall noise", () => {
     const turns = Array.from({ length: 20 }, (_, i) =>
       `- Fix bug ${i} → edited bug${i}.ts`
     ).join("\n");
@@ -44,11 +44,12 @@ describe("breadcrumbs: mergeHeaderSection", () => {
       messages: [userMsg("next")],
       previousSummary: prevSummary,
     });
-    expect(r).toContain("...recall:");
-    expect(r).toContain("bug0.ts");
+    expect(r).not.toContain("...recall:");
+    expect(r).not.toContain("bug0.ts");
+    expect(r).toContain("bug19.ts");
   });
 
-  it("breadcrumb extraction: picks up file paths from edited actions", () => {
+  it("keeps only recent Earlier Turns when the section exceeds its cap", () => {
     const manyTurns = Array.from({ length: 18 }, (_, i) =>
       `- Turn ${i} → edited file${i}.ts`
     ).join("\n");
@@ -57,8 +58,9 @@ describe("breadcrumbs: mergeHeaderSection", () => {
       messages: [userMsg("continue")],
       previousSummary: bigPrevSummary,
     });
-    expect(r).toContain("...recall:");
-    expect(r).toContain("file0.ts");
+    expect(r).not.toContain("...recall:");
+    expect(r).not.toContain("file0.ts");
+    expect(r).toContain("file17.ts");
   });
 
   it("breadcrumb from short text uses first content words", () => {

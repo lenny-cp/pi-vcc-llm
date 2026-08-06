@@ -1,11 +1,13 @@
 import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 
-const EvidenceIds = Type.Optional(Type.Array(Type.String({ minLength: 1 })));
+const Id = Type.String({ minLength: 1, maxLength: 80 });
+const Text = Type.String({ minLength: 1, maxLength: 240 });
+const EvidenceIds = Type.Optional(Type.Array(Id, { maxItems: 4 }));
 
 const SemanticGoalSchema = Type.Object({
-  id: Type.String({ minLength: 1 }),
-  text: Type.String({ minLength: 1 }),
+  id: Id,
+  text: Text,
   status: Type.Union([
     Type.Literal("active"),
     Type.Literal("completed"),
@@ -15,9 +17,9 @@ const SemanticGoalSchema = Type.Object({
 }, { additionalProperties: false });
 
 const SemanticDecisionSchema = Type.Object({
-  id: Type.String({ minLength: 1 }),
-  decision: Type.String({ minLength: 1 }),
-  rationale: Type.Optional(Type.String({ minLength: 1 })),
+  id: Id,
+  decision: Text,
+  rationale: Type.Optional(Text),
   status: Type.Union([
     Type.Literal("proposed"),
     Type.Literal("tested"),
@@ -28,41 +30,49 @@ const SemanticDecisionSchema = Type.Object({
 }, { additionalProperties: false });
 
 const RejectedApproachSchema = Type.Object({
-  id: Type.String({ minLength: 1 }),
-  approach: Type.String({ minLength: 1 }),
-  reason: Type.Optional(Type.String({ minLength: 1 })),
+  id: Id,
+  approach: Text,
+  reason: Type.Optional(Text),
   evidenceEntryIds: EvidenceIds,
 }, { additionalProperties: false });
 
 const OpenQuestionSchema = Type.Object({
-  id: Type.String({ minLength: 1 }),
-  question: Type.String({ minLength: 1 }),
+  id: Id,
+  question: Text,
   status: Type.Union([Type.Literal("open"), Type.Literal("resolved")]),
   evidenceEntryIds: EvidenceIds,
 }, { additionalProperties: false });
 
 const BlockerSchema = Type.Object({
-  id: Type.String({ minLength: 1 }),
-  text: Type.String({ minLength: 1 }),
+  id: Id,
+  text: Text,
   status: Type.Union([Type.Literal("active"), Type.Literal("resolved")]),
   evidenceEntryIds: EvidenceIds,
 }, { additionalProperties: false });
 
 const UserPreferenceSchema = Type.Object({
-  id: Type.String({ minLength: 1 }),
-  text: Type.String({ minLength: 1 }),
+  id: Id,
+  text: Text,
   evidenceEntryIds: EvidenceIds,
 }, { additionalProperties: false });
 
+const CurrentStateSchema = Type.Optional(Type.Object({
+  summary: Text,
+  lastValidatedResult: Type.Optional(Text),
+  nextAction: Type.Optional(Text),
+  evidenceEntryIds: EvidenceIds,
+}, { additionalProperties: false }));
+
 export const SemanticMemorySchema = Type.Object({
   schemaVersion: Type.Literal(1),
-  updatedAt: Type.String({ minLength: 1 }),
-  goals: Type.Array(SemanticGoalSchema),
-  decisions: Type.Array(SemanticDecisionSchema),
-  rejectedApproaches: Type.Array(RejectedApproachSchema),
-  openQuestions: Type.Array(OpenQuestionSchema),
-  blockers: Type.Array(BlockerSchema),
-  preferences: Type.Array(UserPreferenceSchema),
+  updatedAt: Type.String({ minLength: 1, maxLength: 40 }),
+  currentState: CurrentStateSchema,
+  goals: Type.Array(SemanticGoalSchema, { maxItems: 3 }),
+  decisions: Type.Array(SemanticDecisionSchema, { maxItems: 5 }),
+  rejectedApproaches: Type.Array(RejectedApproachSchema, { maxItems: 3 }),
+  openQuestions: Type.Array(OpenQuestionSchema, { maxItems: 3 }),
+  blockers: Type.Array(BlockerSchema, { maxItems: 3 }),
+  preferences: Type.Array(UserPreferenceSchema, { maxItems: 5 }),
 }, { additionalProperties: false });
 
 export type SemanticMemory = Static<typeof SemanticMemorySchema>;
@@ -73,6 +83,7 @@ export const parseSemanticMemory = (value: unknown): SemanticMemory | null =>
 export const emptySemanticMemory = (updatedAt = new Date().toISOString()): SemanticMemory => ({
   schemaVersion: 1,
   updatedAt,
+  currentState: undefined,
   goals: [],
   decisions: [],
   rejectedApproaches: [],

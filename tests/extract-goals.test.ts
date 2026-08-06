@@ -83,4 +83,25 @@ describe("extractGoals", () => {
     expect(goals[0]).toContain("Fix the authentication");
     expect(goals.some((g) => g === "ok")).toBe(false);
   });
+
+  it("normalizes German acknowledgements and detects German task changes", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "user", text: "Super, ich denke wir sollten den aktuellen Stand dokumentieren" },
+      { kind: "assistant", text: "erledigt" },
+      { kind: "user", text: "Ja bitte und die TODOs auflösen" },
+    ];
+    const goals = extractGoals(blocks);
+    expect(goals[0]).toBe("ich denke wir sollten den aktuellen Stand dokumentieren");
+    expect(goals).toContain("[Scope change]");
+    expect(goals).toContain("die TODOs auflösen");
+  });
+
+  it("does not treat acknowledgement-only German messages as goals", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "user", text: "Ja bitte" },
+      { kind: "assistant", text: "okay" },
+      { kind: "user", text: "Lass uns das Hauptformular angehen" },
+    ];
+    expect(extractGoals(blocks)[0]).toBe("Lass uns das Hauptformular angehen");
+  });
 });

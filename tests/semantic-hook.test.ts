@@ -68,7 +68,11 @@ const createMock = (options?: { appendThrows?: boolean }) => {
   } as any;
   registerBeforeCompactHook(pi);
   const ctx = {
-    model: { contextWindow: 100000, maxTokens: 10000 },
+    model: {
+      id: "active-test-model",
+      contextWindow: 100000,
+      maxTokens: 10000,
+    },
     ui: {
       notify: (message: string, level: string) => notifications.push({ message, level }),
     },
@@ -138,14 +142,23 @@ describe("semantic compaction hook integration", () => {
 
     const mock = createMock();
     const result = await mock.invoke();
+    expect(requestBody.model).toBe("active-test-model");
+    expect(requestBody.response_format.type).toBe("json_schema");
+    expect(requestBody.response_format.json_schema.strict).toBe(true);
+    expect(requestBody.chat_template_kwargs).toEqual({ enable_thinking: false });
     expect(requestBody.messages[1].content).toContain("Use approach B. That is the decision.");
     expect(requestBody.messages[1].content).not.toContain("Continue.");
     expect(result.compaction.summary).toContain(SEMANTIC_SUMMARY_MARKER);
+    expect(result.compaction.summary.startsWith(SEMANTIC_SUMMARY_MARKER)).toBe(true);
     expect(result.compaction.summary).toContain("[active] Decision: Use approach B");
     expect(result.compaction.summary).not.toContain("[active] Decision: Approach A");
     expect(mock.appended).toHaveLength(1);
     expect(mock.appended[0].customType).toBe(SEMANTIC_MEMORY_CUSTOM_TYPE);
     expect((mock.appended[0].data as any).decisions[0].status).toBe("active");
+    expect(result.compaction.details.semanticCompaction).toMatchObject({
+      status: "success",
+      model: "active-test-model",
+    });
   });
 
   test("invalid model JSON fails open without persisting or exposing response text", async () => {
@@ -162,6 +175,11 @@ describe("semantic compaction hook integration", () => {
       level: "warning",
     });
     expect(mock.notifications[0].message).not.toContain("SECRET");
+    expect(result.compaction.details.semanticCompaction).toMatchObject({
+      status: "failed",
+      failureCode: "invalid-json",
+      model: "active-test-model",
+    });
   });
 
   test("persistence failure discards the semantic suffix and fails open", async () => {

@@ -1,7 +1,7 @@
 {
   "name": "@monotykamary/pi-vcc",
   "version": "0.8.16",
-  "description": "Algorithmic conversation compactor for pi - transcript-preserving structured summaries, no LLM calls",
+  "description": "Deterministic conversation compactor for pi with optional validated semantic memory",
   "main": "index.ts",
   "keywords": [
     "pi-package",

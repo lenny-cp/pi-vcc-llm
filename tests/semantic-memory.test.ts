@@ -21,6 +21,7 @@ const settings: SemanticCompactionSettings = {
   maxInputChars: 80000,
   maxOutputTokens: 1600,
   temperature: 0.1,
+  disableThinking: true,
   includeToolMetadata: true,
   failureMode: "vcc-only",
 };
@@ -28,6 +29,11 @@ const settings: SemanticCompactionSettings = {
 const validMemory = (): SemanticMemory => ({
   schemaVersion: 1,
   updatedAt: "2026-01-01T00:00:00.000Z",
+  currentState: {
+    summary: "Approach B is being implemented",
+    lastValidatedResult: "The selection was confirmed",
+    nextAction: "Finish the implementation",
+  },
   goals: [{ id: "goal-1", text: "Ship MVP", status: "active" }],
   decisions: [{
     id: "decision-1",
@@ -98,7 +104,9 @@ describe("semantic memory persistence and rendering", () => {
   test("renders fixed Markdown without IDs and omits empty sections", async () => {
     const { rendered } = await runWithResponse(validMemory());
     expect(rendered).toContain(SEMANTIC_SUMMARY_MARKER);
-    expect(rendered).toContain("# SEMANTIC DECISION MEMORY");
+    expect(rendered).toContain("# OPERATIONAL STATE");
+    expect(rendered).toContain("Current state: Approach B is being implemented");
+    expect(rendered).toContain("Next action: Finish the implementation");
     expect(rendered).toContain("## Current Goals");
     expect(rendered).toContain("Decision: Use session entries");
     expect(rendered).not.toContain("goal-1");
@@ -109,8 +117,9 @@ describe("semantic memory persistence and rendering", () => {
   test("strips only the versioned semantic suffix before deterministic recompilation", async () => {
     const deterministic = "VCC summary\n\n[Earlier Turns]\n- work";
     const { rendered } = await runWithResponse(validMemory());
-    const combined = `${deterministic}\n\n${rendered}`;
+    const combined = `${rendered}\n\n---\n\n${deterministic}`;
     expect(stripSemanticSummary(combined)).toBe(deterministic);
+    expect(stripSemanticSummary(`${deterministic}\n\n${rendered}`)).toBe(deterministic);
     expect(stripSemanticSummary(deterministic)).toBe(deterministic);
   });
 });

@@ -740,8 +740,11 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       message,
     }));
 
+    const semanticStartedAt = Date.now();
+    const semanticModel = (ctx as any)?.model?.id ?? settings.semanticCompaction.model;
     return runSemanticCompaction({
       settings: settings.semanticCompaction,
+      model: semanticModel,
       branchEntries: branchEntries as any[],
       sources: semanticSources,
       signal: (event as any).signal,
@@ -751,21 +754,54 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       } catch {
         throw new SemanticCompactionError("persistence");
       }
-      if (!rendered) return baseResult;
+      const semanticCompaction = {
+        status: rendered ? "success" as const : "empty" as const,
+        model: semanticModel,
+        durationMs: Date.now() - semanticStartedAt,
+      };
+      if (!rendered) {
+        return {
+          compaction: {
+            ...baseResult.compaction,
+            details: {
+              ...details,
+              semanticCompaction,
+            },
+          },
+        };
+      }
       return {
         compaction: {
           ...baseResult.compaction,
-          summary: `${summary}\n\n${rendered}`,
+          summary: `${rendered}\n\n---\n\n${summary}`,
+          details: {
+            ...details,
+            semanticCompaction,
+          },
         },
       };
     }).catch((error: unknown) => {
+      const failureCode = semanticFailureCode(error);
       try {
         ctx?.ui?.notify?.(
-          `pi-vcc: semantic compaction failed (${semanticFailureCode(error)}); using VCC-only output`,
+          `pi-vcc: semantic compaction failed (${failureCode}); using VCC-only output`,
           "warning",
         );
       } catch {}
-      return baseResult;
+      return {
+        compaction: {
+          ...baseResult.compaction,
+          details: {
+            ...details,
+            semanticCompaction: {
+              status: "failed" as const,
+              model: semanticModel,
+              failureCode,
+              durationMs: Date.now() - semanticStartedAt,
+            },
+          },
+        },
+      };
     });
   });
 

@@ -147,13 +147,17 @@ const mergeHeaderSection = (header: string, prev: string, fresh: string): string
   const freshLines = fresh.split("\n").filter(isClean);
   const prevBreadcrumbs = prev.split("\n").filter(isRecallBreadcrumb);
   const freshBreadcrumbs = fresh.split("\n").filter(isRecallBreadcrumb);
-  const allBreadcrumbs = [...new Set([...prevBreadcrumbs, ...freshBreadcrumbs])];
+  const allBreadcrumbs = header === "Earlier Turns"
+    ? []
+    : [...new Set([...prevBreadcrumbs, ...freshBreadcrumbs])];
   const contentLines = [...new Set([...prevLines.filter(l => !isRecallBreadcrumb(l)), ...freshLines.filter(l => !isRecallBreadcrumb(l))])];
   const CAP = header === "Session Goal" ? 8 : header === "Commits" ? 8 : header === "Earlier Turns" ? 15 : 15;
   if (contentLines.length > CAP) {
     const kept = contentLines.slice(-CAP);
     const dropped = contentLines.slice(0, contentLines.length - CAP);
-    const crumbs = dropped.map(extractBreadcrumb).filter(Boolean);
+    const crumbs = header === "Earlier Turns"
+      ? []
+      : dropped.map(extractBreadcrumb).filter(Boolean);
     const headerLine = `[${header}]`;
     // Merge new crumbs with existing breadcrumbs (dedup by extracting terms)
     const allCrumbs = crumbs.length > 0 ? [...allBreadcrumbs, `- ...recall: ${crumbs.join(", ")}`] : allBreadcrumbs;

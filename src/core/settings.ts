@@ -98,12 +98,15 @@ export interface PiVccSettings {
 export interface SemanticCompactionSettings {
   enabled: boolean;
   endpoint: string;
-  model: string;
+  /** @deprecated The compaction hook uses pi's active model ID. */
+  model?: string;
   apiKey: string;
   timeoutMs: number;
   maxInputChars: number;
   maxOutputTokens: number;
   temperature: number;
+  /** Ask compatible local chat templates to skip hidden reasoning for this structured task. */
+  disableThinking: boolean;
   includeToolMetadata: boolean;
   failureMode: "vcc-only";
 }
@@ -111,12 +114,12 @@ export interface SemanticCompactionSettings {
 const DEFAULT_SEMANTIC_COMPACTION_SETTINGS: SemanticCompactionSettings = {
   enabled: false,
   endpoint: "http://127.0.0.1:8080/v1/chat/completions",
-  model: "default",
   apiKey: "",
   timeoutMs: 30000,
   maxInputChars: 80000,
-  maxOutputTokens: 1600,
+  maxOutputTokens: 900,
   temperature: 0.1,
+  disableThinking: true,
   includeToolMetadata: true,
   failureMode: "vcc-only",
 };
@@ -155,7 +158,7 @@ const normalizeSemanticCompactionSettings = (
       : defaults.endpoint,
     model: typeof candidate.model === "string" && candidate.model.trim()
       ? candidate.model.trim()
-      : defaults.model,
+      : undefined,
     apiKey: typeof candidate.apiKey === "string" ? candidate.apiKey : defaults.apiKey,
     timeoutMs: finiteNumber(candidate.timeoutMs, defaults.timeoutMs, {
       min: 1,
@@ -176,6 +179,7 @@ const normalizeSemanticCompactionSettings = (
       min: 0,
       max: 2,
     }),
+    disableThinking: candidate.disableThinking !== false,
     includeToolMetadata: candidate.includeToolMetadata !== false,
     failureMode: "vcc-only",
   };

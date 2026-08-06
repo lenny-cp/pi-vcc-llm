@@ -6,7 +6,7 @@ const section = (title: string, items?: string[]): string => {
   return `[${title}]\n${body}`;
 };
 
-const BRIEF_MAX_LINES = 120;
+const BRIEF_MAX_LINES = 60;
 const TUI_SAFE_LINE_CHARS = 120;
 
 const wrapLine = (line: string, maxChars: number): string[] => {

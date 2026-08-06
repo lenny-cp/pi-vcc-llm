@@ -14,6 +14,7 @@ const settings: SemanticCompactionSettings = {
   maxInputChars: 80000,
   maxOutputTokens: 1600,
   temperature: 0.1,
+  disableThinking: true,
   includeToolMetadata: true,
   failureMode: "vcc-only",
 };
@@ -24,7 +25,12 @@ describe("OpenAI-compatible semantic client", () => {
     let captured: { url?: string; init?: RequestInit } = {};
     const content = await requestSemanticCompletion({
       settings,
+      model: "active-model",
       prompts,
+      jsonSchema: {
+        name: "semantic_memory",
+        schema: { type: "object" },
+      },
       fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
         captured = { url: String(url), init };
         return new Response(JSON.stringify({
@@ -36,12 +42,36 @@ describe("OpenAI-compatible semantic client", () => {
     expect(captured.url).toBe(settings.endpoint);
     expect((captured.init?.headers as Record<string, string>).authorization).toBe("Bearer secret");
     const body = JSON.parse(String(captured.init?.body));
-    expect(body.model).toBe("default");
+    expect(body.model).toBe("active-model");
     expect(body.max_tokens).toBe(1600);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(body.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "semantic_memory",
+        strict: true,
+        schema: { type: "object" },
+      },
+    });
     expect(body.messages).toEqual([
       { role: "system", content: "system" },
       { role: "user", content: "user" },
     ]);
+  });
+
+  test("falls back to the legacy configured model for direct callers", async () => {
+    let body: any;
+    await requestSemanticCompletion({
+      settings,
+      prompts,
+      fetchImpl: (async (_url: string | URL | Request, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "{}" } }],
+        }), { status: 200 });
+      }) as typeof fetch,
+    });
+    expect(body.model).toBe("default");
   });
 
   test("omits authorization when no key is configured", async () => {

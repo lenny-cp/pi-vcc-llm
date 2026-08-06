@@ -91,6 +91,49 @@ const isTscResolved = (file: string, tailIdx: number, editPositions: Map<number,
   return false;
 };
 
+const isRepeatedFailureResolved = (
+  tail: NormalizedBlock[],
+  failureIndex: number,
+): boolean => {
+  const failure = tail[failureIndex];
+  if (!failure) return false;
+
+  if (failure.kind === "bash") {
+    const commandKey = failure.command.trim().replace(/\s+/g, " ");
+    return tail.slice(failureIndex + 1).some((candidate) =>
+      candidate.kind === "bash" &&
+      candidate.exitCode === 0 &&
+      candidate.command.trim().replace(/\s+/g, " ") === commandKey
+    );
+  }
+
+  if (failure.kind !== "tool_result" || !failure.isError) return false;
+  let failedCall: Extract<NormalizedBlock, { kind: "tool_call" }> | undefined;
+  for (let index = failureIndex - 1; index >= Math.max(0, failureIndex - 3); index--) {
+    const candidate = tail[index];
+    if (candidate.kind === "tool_call" && candidate.name === failure.name) {
+      failedCall = candidate;
+      break;
+    }
+  }
+  if (!failedCall) return false;
+  const failedPath = extractPath(failedCall.args);
+
+  for (let index = failureIndex + 1; index < tail.length; index++) {
+    const candidate = tail[index];
+    if (candidate.kind !== "tool_call" || candidate.name !== failedCall.name) continue;
+    if (failedPath && extractPath(candidate.args) !== failedPath) continue;
+    for (let resultIndex = index + 1; resultIndex <= Math.min(index + 3, tail.length - 1); resultIndex++) {
+      const result = tail[resultIndex];
+      if (result.kind === "tool_result" && result.name === candidate.name) {
+        if (!result.isError) return true;
+        break;
+      }
+    }
+  }
+  return false;
+};
+
 const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
   const items: string[] = [];
   const itemTailIndices: number[] = [];
@@ -114,7 +157,7 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
       const cmdDisplay = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
       const outLine = firstLine(b.output, 120);
       const errTag = `exit ${b.exitCode}`;
-      push(`[bash:${errTag}] ${cmdDisplay}${outLine && outLine !== cmdDisplay ? ` → ${outLine}` : ""}`);
+      push(`[bash:${errTag}] ${cmdDisplay}${outLine && outLine !== cmdDisplay ? ` → ${outLine}` : ""}`, bi);
       continue;
     }
 
@@ -136,7 +179,7 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
 
     // 3. Test failures in bash output
     if (b.kind === "bash" && b.output && TEST_FAIL_RE.test(b.output.slice(0, BASH_OUTPUT_SCAN_LIMIT))) {
-      push(`[tests] ${firstLine(b.output, 150)}`);
+      push(`[tests] ${firstLine(b.output, 150)}`, bi);
       continue;
     }
 
@@ -174,11 +217,11 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
       }
       // Check for test failures
       if (TEST_FAIL_RE.test(b.text)) {
-        push(`[tests] ${firstLine(b.text, 150)}`);
+        push(`[tests] ${firstLine(b.text, 150)}`, bi);
         continue;
       }
       // Generic error fallback
-      push(`[${b.name}] ${firstLine(b.text, 150)}`);
+      push(`[${b.name}] ${firstLine(b.text, 150)}`, bi);
       continue;
     }
 
@@ -215,7 +258,12 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
   return items.slice(0, 8).map((item, idx) => {
     const tailIdx = itemTailIndices[idx] ?? -1;
     const file = extractTscFile(item);
-    const resolved = tailIdx >= 0 && file !== null && isTscResolved(file, tailIdx, editPositions);
+    const resolved =
+      tailIdx >= 0 &&
+      (
+        (file !== null && isTscResolved(file, tailIdx, editPositions)) ||
+        isRepeatedFailureResolved(tail, tailIdx)
+      );
     if (!resolved) return priorityTag(item);
     const tagged = priorityTag(item);
     return tagged.replace(/^\[(ERROR|WARN)\]/, "[RESOLVED]");
@@ -292,7 +340,12 @@ export const buildSections = (input: BuildSectionsInput): SectionData => {
     sessionGoal,
   );
 
-  const turnSummaries = identifyTurns(blocks).map(t => t.summary);
+  const turnSummaries = identifyTurns(blocks)
+    .map(t => t.summary)
+    .filter((summary) =>
+      !summary.startsWith("[skill:") &&
+      !summary.startsWith("...recall:")
+    );
   const outstandingContext = extractOutstandingContext(blocks);
 
   const result: SectionData = {

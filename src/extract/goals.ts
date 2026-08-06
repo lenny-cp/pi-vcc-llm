@@ -3,12 +3,16 @@ import { nonEmptyLines, clip } from "../core/content";
 import { collapseSkillLines } from "../core/skill-collapse";
 
 const SCOPE_CHANGE_RE =
-  /\b(instead|actually|change of plan|forget that|new task|switch to|now I want|pivot|let'?s do|stop .* and)\b/i;
+  /\b(instead|actually|change of plan|forget that|new task|switch to|now I want|pivot|let'?s do|stop .* and|stattdessen|eigentlich|planänderung|neue aufgabe|wechseln wir|lass uns|gehen wir|überspringen wir|bleiben wir)\b/i;
 
 const TASK_RE =
-  /\b(fix|implement|add|create|build|refactor|debug|investigate|update|remove|delete|migrate|deploy|test|write|set up)\b/i;
+  /\b(fix|implement|add|create|build|refactor|debug|investigate|update|remove|delete|migrate|deploy|test|write|set up|beheben|implementieren|hinzufügen|erstellen|bauen|refaktorieren|untersuchen|prüfen|aktualisieren|entfernen|löschen|migrieren|testen|schreiben|angehen|auflösen|weitermachen)\b/i;
 
 const NOISE_SHORT_RE = /^(ok|yes|no|sure|yeah|yep|go|hi|hey|thx|thanks|ok\b.*|y|n|k)\s*[.!?]*$/i;
+const ACK_ONLY_RE =
+  /^(?:ja|jep|okay|ok|super|perfekt|prima|danke|vielen dank|das wäre super|ja bitte|gerne)\s*[.!?]*$/i;
+const ACK_PREFIX_RE =
+  /^(?:(?:ja|jep|okay|ok|super|perfekt|prima|danke)\s*[,.:;-]?\s*)?(?:das wäre (?:super|gut|perfekt)\s*[,.:;-]?\s*)?(?:bitte\s+)?(?:und\s+)?/i;
 
 // Reject lines that are clearly not user goals (pasted output, code, paths, tool dumps)
 // or meta-prompt boilerplate (command templates like `/issues` that start with "For each issue:"
@@ -36,6 +40,7 @@ const isSubstantiveGoal = (text: string): boolean => {
   if (t.length <= 5) return false;
   if (t.length > MAX_GOAL_CHARS) return false;
   if (NOISE_SHORT_RE.test(t)) return false;
+  if (ACK_ONLY_RE.test(t)) return false;
   if (NON_GOAL_RE.test(t)) return false;
   return true;
 };
@@ -43,6 +48,12 @@ const isSubstantiveGoal = (text: string): boolean => {
 // Test scope-change / task intent only on the leading portion of a user block
 // so that pasted outputs below the actual instruction do not trigger matches.
 const LEADING_CHARS = 200;
+
+const normalizeGoalLine = (line: string): string => {
+  const stripped = stripLeadingBullet(line);
+  const withoutAck = stripped.replace(ACK_PREFIX_RE, "").trim();
+  return withoutAck || stripped;
+};
 
 export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
   const goals: string[] = [];
@@ -53,7 +64,7 @@ export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
     const rawLines = nonEmptyLines(b.text);
     const truncated = truncateAtTemplate(rawLines);
     const lines = collapseSkillLines(truncated.filter(isSubstantiveGoal))
-      .map(stripLeadingBullet)
+      .map(normalizeGoalLine)
       .filter((l) => l.length > 5);
     if (lines.length === 0) continue;
 
