@@ -108,6 +108,12 @@ export interface SemanticCompactionSettings {
   /** Ask compatible local chat templates to skip hidden reasoning for this structured task. */
   disableThinking: boolean;
   includeToolMetadata: boolean;
+  /**
+   * Character budget for the session's assistant thinking blocks in the
+   * semantic input. 0 (default) sends no thinking. Filled after all other
+   * entries, newest first; redacted blocks are always skipped.
+   */
+  maxThinkingChars: number;
   failureMode: "vcc-only";
 }
 
@@ -121,6 +127,7 @@ const DEFAULT_SEMANTIC_COMPACTION_SETTINGS: SemanticCompactionSettings = {
   temperature: 0.1,
   disableThinking: true,
   includeToolMetadata: true,
+  maxThinkingChars: 0,
   failureMode: "vcc-only",
 };
 
@@ -181,6 +188,11 @@ const normalizeSemanticCompactionSettings = (
     }),
     disableThinking: candidate.disableThinking !== false,
     includeToolMetadata: candidate.includeToolMetadata !== false,
+    maxThinkingChars: finiteNumber(candidate.maxThinkingChars, defaults.maxThinkingChars, {
+      min: 0,
+      max: 1000000,
+      integer: true,
+    }),
     failureMode: "vcc-only",
   };
 };

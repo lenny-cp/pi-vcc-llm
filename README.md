@@ -596,6 +596,7 @@ Config lives at `~/.pi/agent/pi-vcc-config.json` (auto-scaffolded on first load 
     "temperature": 0.1,
     "disableThinking": true,
     "includeToolMetadata": true,
+    "maxThinkingChars": 0,
     "failureMode": "vcc-only"
   }
 }
@@ -642,6 +643,7 @@ The default endpoint works with an OpenAI-compatible local server such as llama.
     "temperature": 0.1,
     "disableThinking": true,
     "includeToolMetadata": true,
+    "maxThinkingChars": 0,
     "failureMode": "vcc-only"
   }
 }
@@ -652,13 +654,20 @@ model configuration is needed. `apiKey` is optional, so localhost works without
 authentication. When it is non-empty, pi-vcc sends it as a Bearer token and
 never includes it in warnings or debug output. `includeToolMetadata` controls
 compact tool names, selected short arguments, and success/error hints; complete
-tool results, file contents, diffs, logs, images, and thinking blocks are not
-sent. `disableThinking` defaults to `true` and passes
+tool results, file contents, diffs, logs, and images are not sent.
+`maxThinkingChars` *(default `0`, off)* opts the session's assistant thinking
+blocks into the semantic input. They are filled last, newest first, within that
+budget (each block clipped to 2,000 chars, head and tail kept), and redacted
+blocks are always skipped. Thinking is where rationales and discarded
+alternatives usually live, so it mainly improves decisions, rejected approaches,
+and open questions; the prompt treats it as hypotheses that never count as
+evidence of a decision or result on their own. Something like `20000` is a
+reasonable start; larger values add prefill latency against `timeoutMs`. `disableThinking` defaults to `true` and passes
 `chat_template_kwargs.enable_thinking=false` to compatible local servers; a
 structured memory update benefits more from predictable JSON and bounded
 latency than from a long hidden reasoning trace.
 
-**Privacy:** a remote endpoint receives filtered user messages and assistant prose from the portion of the session being compacted, plus the prior semantic state. Only enable a remote URL when that disclosure is acceptable. Prompts and raw model responses are not logged by this feature.
+**Privacy:** a remote endpoint receives filtered user messages and assistant prose (plus thinking when `maxThinkingChars > 0`) from the portion of the session being compacted, plus the prior semantic state. Only enable a remote URL when that disclosure is acceptable. Prompts and raw model responses are not logged by this feature.
 
 Known MVP limitations: updates happen only during pi-vcc compaction; there is no semantic recall endpoint, embedding search, cross-session/global memory, confidence scoring, knowledge graph, or automatic multi-compaction reconsolidation.
 

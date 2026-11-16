@@ -9,7 +9,7 @@ export interface SemanticMessageSource {
 
 interface SemanticInputEntry {
   entryId?: string;
-  role: "user" | "assistant" | "tool";
+  role: "user" | "assistant" | "tool" | "thinking";
   text: string;
 }
 
@@ -52,9 +52,14 @@ const toolCallMetadata = (part: any): string => {
   );
 };
 
+// ponytail: fixed per-block cap so one long trace cannot eat the whole thinking budget;
+// make it configurable if traces routinely carry rationale beyond head + tail.
+const MAX_THINKING_BLOCK_CHARS = 2000;
+
 const candidatesOf = (
   sources: SemanticMessageSource[],
   includeToolMetadata: boolean,
+  includeThinking: boolean,
 ): Candidate[] => {
   const candidates: Candidate[] = [];
   let order = 0;
@@ -68,6 +73,23 @@ const candidatesOf = (
     }
 
     if (message.role === "assistant") {
+      if (includeThinking && Array.isArray(message.content)) {
+        const thinking = compactWhitespace(
+          message.content
+            .filter((part: any) =>
+              part?.type === "thinking" && !part.redacted && typeof part.thinking === "string")
+            .map((part: any) => part.thinking)
+            .join("\n"),
+        );
+        if (thinking) {
+          candidates.push({
+            entryId: source.entryId,
+            role: "thinking",
+            text: clip(thinking, MAX_THINKING_BLOCK_CHARS),
+            order: order++,
+          });
+        }
+      }
       const prose = typeof message.content === "string"
         ? compactWhitespace(message.content)
         : Array.isArray(message.content)
@@ -122,6 +144,8 @@ const renderEntry = (entry: SemanticInputEntry): string => {
 export const buildSemanticInput = (options: {
   sources: SemanticMessageSource[];
   includeToolMetadata: boolean;
+  /** Budget for assistant thinking blocks; 0 excludes them. Filled last. */
+  maxThinkingChars?: number;
   maxInputChars: number;
   previousMemoryJson: string;
 }): SemanticInput => {
@@ -130,13 +154,21 @@ export const buildSemanticInput = (options: {
     throw new Error("previous-memory-too-large");
   }
 
-  const candidates = candidatesOf(options.sources, options.includeToolMetadata);
-  const priorities: SemanticInputEntry["role"][] = ["user", "assistant", "tool"];
+  const maxThinkingChars = options.maxThinkingChars ?? 0;
+  const candidates = candidatesOf(
+    options.sources,
+    options.includeToolMetadata,
+    maxThinkingChars > 0,
+  );
+  const priorities: SemanticInputEntry["role"][] = ["user", "assistant", "tool", "thinking"];
   const selected: Candidate[] = [];
   let remaining = remainingInitial;
 
   for (const role of priorities) {
     const tier = candidates.filter((candidate) => candidate.role === role).reverse();
+    // Thinking is the least authoritative source: it only gets leftover budget, capped.
+    const reserved = role === "thinking" ? Math.max(0, remaining - maxThinkingChars) : 0;
+    remaining -= reserved;
     for (const candidate of tier) {
       if (remaining <= 0) break;
       const rendered = renderEntry(candidate);
@@ -156,6 +188,7 @@ export const buildSemanticInput = (options: {
       }
       break;
     }
+    remaining += reserved;
   }
 
   selected.sort((a, b) => a.order - b.order);

@@ -191,6 +191,11 @@ decisions, motivations, results, or user preferences. Distinguish carefully betw
 discussed, tested, accepted, active, rejected, superseded, and unresolved. A proposal is not a
 decision. A test is not necessarily successful. A discussed configuration is not necessarily active.
 
+Entries with role "thinking" are the assistant's private reasoning: hypotheses, not facts. Use them
+only to recover rationales, rejected alternatives and their reasons, and open questions. Never treat
+thinking alone as evidence that something was decided, done, validated, or preferred by the user.
+When thinking conflicts with user, assistant, or tool entries, those entries win.
+
 Do not rewrite exact technical records such as commands, paths, ports, model names, benchmark
 values, error messages, or file contents. A separate deterministic compiler owns those facts.
 
@@ -239,6 +244,7 @@ export const runSemanticCompaction = async (options: {
     input = buildSemanticInput({
       sources: options.sources,
       includeToolMetadata: options.settings.includeToolMetadata,
+      maxThinkingChars: options.settings.maxThinkingChars,
       maxInputChars: options.settings.maxInputChars,
       previousMemoryJson: previousJson,
     });

@@ -23,6 +23,7 @@ const settings: SemanticCompactionSettings = {
   temperature: 0.1,
   disableThinking: true,
   includeToolMetadata: true,
+  maxThinkingChars: 0,
   failureMode: "vcc-only",
 };
 

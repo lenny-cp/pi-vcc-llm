@@ -83,6 +83,55 @@ describe("semantic input builder", () => {
     )).toBe(true);
   });
 
+  test("includes non-redacted thinking last, inside its own budget", () => {
+    const sources = [
+      source("u1", { role: "user", content: "Fix the cache bug" }),
+      source("a1", {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: `old ${"o".repeat(300)}` },
+          { type: "text", text: "Looking at it." },
+        ],
+      }),
+      source("a2", {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "", thinkingSignature: "opaque", redacted: true },
+          { type: "thinking", thinking: "Rejected LRU because keys are unbounded" },
+          { type: "text", text: "Using a TTL map." },
+        ],
+      }),
+    ];
+    const input = buildSemanticInput({
+      previousMemoryJson: "{}",
+      maxInputChars: 5000,
+      maxThinkingChars: 100,
+      includeToolMetadata: true,
+      sources,
+    });
+
+    expect(input.text).toContain(
+      '<entry role="thinking" id="a2">Rejected LRU because keys are unbounded</entry>',
+    );
+    expect(input.text).not.toContain("old o");
+    expect(input.text).not.toContain("opaque");
+    const thinkingChars = input.entries
+      .filter((entry) => entry.role === "thinking")
+      .reduce((sum, entry) => sum + entry.text.length, 0);
+    expect(thinkingChars).toBeLessThanOrEqual(100);
+    // Chronological order is preserved: a2's thinking precedes a2's prose.
+    expect(input.text.indexOf("Rejected LRU")).toBeLessThan(input.text.indexOf("TTL map"));
+
+    const off = buildSemanticInput({
+      previousMemoryJson: "{}",
+      maxInputChars: 5000,
+      maxThinkingChars: 0,
+      includeToolMetadata: true,
+      sources,
+    });
+    expect(off.entries.some((entry) => entry.role === "thinking")).toBe(false);
+  });
+
   test("rejects a previous memory that already exceeds the budget", () => {
     expect(() => buildSemanticInput({
       previousMemoryJson: "x".repeat(101),
