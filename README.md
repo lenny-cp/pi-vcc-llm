@@ -592,7 +592,7 @@ Config lives at `~/.pi/agent/pi-vcc-config.json` (auto-scaffolded on first load 
     "apiKey": "",
     "timeoutMs": 30000,
     "maxInputChars": 80000,
-    "maxOutputTokens": 900,
+    "maxOutputTokens": 2000,
     "temperature": 0.1,
     "disableThinking": true,
     "includeToolMetadata": true,
@@ -619,13 +619,19 @@ Hybrid semantic compaction adds a leading operational-state layer for current st
 
 1. The existing deterministic VCC output remains authoritative for exact facts such as paths, commands, errors, ports, model names, configuration values, and turn order.
 2. The semantic model may only add interpretative memory. It never rewrites or replaces the VCC output.
-3. The request uses API-level JSON Schema structured output. Model output is parsed as JSON, checked against the same closed versioned schema, normalized, and rendered by pi-vcc. Free-form model Markdown is never appended.
+3. The request uses API-level JSON Schema structured output. Model output is parsed as JSON, checked against the same closed versioned schema, normalized, and rendered by pi-vcc. Evidence IDs that do not match a real session entry are dropped. Free-form model Markdown is never appended.
 4. Any endpoint, timeout, abort, HTTP, JSON, schema, or persistence failure returns the normal VCC-only compaction result.
 
 On success, the rendered `# OPERATIONAL STATE` block appears before the
 deterministic VCC evidence. On every enabled run, `compaction.details` records
 the semantic status (`success`, `empty`, or `failed`), model, duration, and a
-safe failure code when applicable.
+safe failure code when applicable. `truncated` means the model hit
+`maxOutputTokens` before finishing the JSON; raise it if that recurs.
+
+Closed items (completed goals, superseded decisions, resolved questions and
+blockers) are rendered once, in the compaction that closes them, and are then
+left out of the memory passed to the next update, so they do not occupy the
+per-category item limits. The prompt states those limits explicitly.
 
 The semantic pass runs only when pi-vcc itself compiles the summary. It does not take over compactions delegated to pi core or pi-fabric. The state is stored as a versioned Pi custom session entry, which does not participate directly in model context and follows the active session branch. Only validated state is persisted.
 
@@ -639,7 +645,7 @@ The default endpoint works with an OpenAI-compatible local server such as llama.
     "apiKey": "",
     "timeoutMs": 30000,
     "maxInputChars": 80000,
-    "maxOutputTokens": 900,
+    "maxOutputTokens": 2000,
     "temperature": 0.1,
     "disableThinking": true,
     "includeToolMetadata": true,

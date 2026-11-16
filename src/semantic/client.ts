@@ -5,7 +5,8 @@ export type SemanticClientFailure =
   | "timeout"
   | "network"
   | "http"
-  | "empty-response";
+  | "empty-response"
+  | "truncated";
 
 export class SemanticClientError extends Error {
   constructor(public readonly code: SemanticClientFailure) {
@@ -99,7 +100,10 @@ export const requestSemanticCompletion = async (options: {
     }
     if (timedOut) throw new SemanticClientError("timeout");
     if (controller.signal.aborted) throw new SemanticClientError("aborted");
-    const content = (payload as any)?.choices?.[0]?.message?.content;
+    const choice = (payload as any)?.choices?.[0];
+    // A length stop means cut-off JSON; name it instead of surfacing invalid-json.
+    if (choice?.finish_reason === "length") throw new SemanticClientError("truncated");
+    const content = choice?.message?.content;
     if (typeof content !== "string" || !content.trim()) {
       throw new SemanticClientError("empty-response");
     }

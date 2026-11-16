@@ -35,9 +35,10 @@ export class SemanticCompactionError extends Error {
 
 const oneLine = (value: string): string => value.replace(/\s+/g, " ").trim();
 const compareText = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
-const evidence = (ids?: string[]): string[] | undefined => {
+const evidence = (ids: string[] | undefined, knownIds: Set<string>): string[] | undefined => {
   if (!ids) return undefined;
-  const normalized = [...new Set(ids.map(oneLine).filter(Boolean))].sort(compareText);
+  const normalized = [...new Set(ids.map(oneLine).filter((id) => knownIds.has(id)))]
+    .sort(compareText);
   return normalized.length ? normalized : undefined;
 };
 
@@ -49,7 +50,8 @@ const dedupeById = <T extends { id: string }>(items: T[]): T[] => {
 
 const normalizeSemanticMemory = (
   memory: SemanticMemory,
-  updatedAt = new Date().toISOString(),
+  updatedAt: string,
+  knownIds: Set<string>,
 ): SemanticMemory => {
   const currentState = memory.currentState
     ? {
@@ -60,14 +62,14 @@ const normalizeSemanticMemory = (
         nextAction: memory.currentState.nextAction
           ? oneLine(memory.currentState.nextAction) || undefined
           : undefined,
-        evidenceEntryIds: evidence(memory.currentState.evidenceEntryIds),
+        evidenceEntryIds: evidence(memory.currentState.evidenceEntryIds, knownIds),
       }
     : undefined;
   const goals = dedupeById(memory.goals.map((item) => ({
     ...item,
     id: oneLine(item.id),
     text: oneLine(item.text),
-    evidenceEntryIds: evidence(item.evidenceEntryIds),
+    evidenceEntryIds: evidence(item.evidenceEntryIds, knownIds),
   })).filter((item) => item.id && item.text))
     .sort((a, b) => compareText(a.text, b.text) || compareText(a.id, b.id));
 
@@ -76,7 +78,7 @@ const normalizeSemanticMemory = (
     id: oneLine(item.id),
     decision: oneLine(item.decision),
     rationale: item.rationale ? oneLine(item.rationale) || undefined : undefined,
-    evidenceEntryIds: evidence(item.evidenceEntryIds),
+    evidenceEntryIds: evidence(item.evidenceEntryIds, knownIds),
   })).filter((item) => item.id && item.decision))
     .sort((a, b) => compareText(a.decision, b.decision) || compareText(a.id, b.id));
 
@@ -85,7 +87,7 @@ const normalizeSemanticMemory = (
     id: oneLine(item.id),
     approach: oneLine(item.approach),
     reason: item.reason ? oneLine(item.reason) || undefined : undefined,
-    evidenceEntryIds: evidence(item.evidenceEntryIds),
+    evidenceEntryIds: evidence(item.evidenceEntryIds, knownIds),
   })).filter((item) => item.id && item.approach))
     .sort((a, b) => compareText(a.approach, b.approach) || compareText(a.id, b.id));
 
@@ -93,7 +95,7 @@ const normalizeSemanticMemory = (
     ...item,
     id: oneLine(item.id),
     question: oneLine(item.question),
-    evidenceEntryIds: evidence(item.evidenceEntryIds),
+    evidenceEntryIds: evidence(item.evidenceEntryIds, knownIds),
   })).filter((item) => item.id && item.question))
     .sort((a, b) => compareText(a.question, b.question) || compareText(a.id, b.id));
 
@@ -101,7 +103,7 @@ const normalizeSemanticMemory = (
     ...item,
     id: oneLine(item.id),
     text: oneLine(item.text),
-    evidenceEntryIds: evidence(item.evidenceEntryIds),
+    evidenceEntryIds: evidence(item.evidenceEntryIds, knownIds),
   })).filter((item) => item.id && item.text))
     .sort((a, b) => compareText(a.text, b.text) || compareText(a.id, b.id));
 
@@ -109,7 +111,7 @@ const normalizeSemanticMemory = (
     ...item,
     id: oneLine(item.id),
     text: oneLine(item.text),
-    evidenceEntryIds: evidence(item.evidenceEntryIds),
+    evidenceEntryIds: evidence(item.evidenceEntryIds, knownIds),
   })).filter((item) => item.id && item.text))
     .sort((a, b) => compareText(a.text, b.text) || compareText(a.id, b.id));
 
@@ -125,6 +127,16 @@ const normalizeSemanticMemory = (
     preferences,
   };
 };
+
+// Closed items render once, in the compaction that closed them, then leave the
+// memory the model sees, so they stop occupying the per-category item limits.
+const withoutClosedItems = (memory: SemanticMemory): SemanticMemory => ({
+  ...memory,
+  goals: memory.goals.filter((item) => item.status !== "completed"),
+  decisions: memory.decisions.filter((item) => item.status !== "superseded"),
+  openQuestions: memory.openQuestions.filter((item) => item.status !== "resolved"),
+  blockers: memory.blockers.filter((item) => item.status !== "resolved"),
+});
 
 const loadSemanticMemory = (branchEntries: unknown[]): SemanticMemory | null => {
   for (let index = branchEntries.length - 1; index >= 0; index--) {
@@ -184,6 +196,13 @@ export const stripSemanticSummary = (summary: string | undefined): string | unde
   return summary.slice(0, markerIndex).trimEnd();
 };
 
+const ITEM_LIMITS = Object.entries(SemanticMemorySchema.properties)
+  .flatMap(([key, schema]) => {
+    const maxItems = (schema as { maxItems?: number }).maxItems;
+    return maxItems ? [`${key} ${maxItems}`] : [];
+  })
+  .join(", ");
+
 const SYSTEM_PROMPT = `You maintain a compact semantic memory for a software-development session.
 
 Extract only information explicitly supported by the supplied conversation. Do not invent facts,
@@ -203,6 +222,9 @@ Focus only on the current operational state, the last validated result, the next
 goals, decisions and rationales, rejected approaches and reasons, unresolved questions, blockers,
 and durable user workflow preferences. Update the previous memory with the new entries, remove
 duplicates, mark superseded or resolved items, and preserve still-relevant previous items.
+Closed items (completed goals, superseded decisions, resolved questions and blockers) are shown
+once and then removed from the previous memory you receive; do not re-add them. Hard item limits:
+${ITEM_LIMITS}. When a category is full, keep the most relevant active items.
 
 Return valid JSON only, with no Markdown or code fences. The API enforces the output schema.
 Keep the memory sparse: omit unsupported optional fields and use empty arrays when a category has no durable item.`;
@@ -237,9 +259,11 @@ export const runSemanticCompaction = async (options: {
   now?: () => string;
 }): Promise<{ memory: SemanticMemory; rendered: string }> => {
   const now = options.now ?? (() => new Date().toISOString());
-  const previous = loadSemanticMemory(options.branchEntries) ?? emptySemanticMemory(now());
+  const previous = withoutClosedItems(
+    loadSemanticMemory(options.branchEntries) ?? emptySemanticMemory(now()),
+  );
   const previousJson = JSON.stringify(previous);
-  let input;
+  let input: ReturnType<typeof buildSemanticInput>;
   try {
     input = buildSemanticInput({
       sources: options.sources,
@@ -281,7 +305,14 @@ export const runSemanticCompaction = async (options: {
   }
   const parsed = parseSemanticMemory(decoded);
   if (!parsed) throw new SemanticCompactionError("schema-validation");
-  const memory = normalizeSemanticMemory(parsed, now());
+  // Evidence must point at real entries: drop IDs the model invented.
+  const knownIds = new Set(
+    [
+      ...options.branchEntries.map((entry) => (entry as { id?: unknown })?.id),
+      ...input.entries.map((entry) => entry.entryId),
+    ].filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  const memory = normalizeSemanticMemory(parsed, now(), knownIds);
   return { memory, rendered: renderSemanticMemory(memory) };
 };
 

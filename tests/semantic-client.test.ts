@@ -104,6 +104,14 @@ describe("OpenAI-compatible semantic client", () => {
         status: 200,
       })) as typeof fetch,
     })).rejects.toMatchObject({ code: "empty-response" });
+
+    await expect(requestSemanticCompletion({
+      settings,
+      prompts,
+      fetchImpl: (async () => new Response(JSON.stringify({
+        choices: [{ finish_reason: "length", message: { content: '{"schemaVersion":1,"goa' } }],
+      }), { status: 200 })) as typeof fetch,
+    })).rejects.toMatchObject({ code: "truncated" });
   });
 
   test("times out and honors a parent abort signal", async () => {

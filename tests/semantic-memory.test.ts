@@ -102,6 +102,36 @@ describe("semantic memory persistence and rendering", () => {
     expect(body.messages[1].content).toContain("Ship MVP");
   });
 
+  test("drops invented evidence IDs but keeps input and branch IDs", async () => {
+    const memory = validMemory();
+    memory.decisions[0].evidenceEntryIds = ["u1", "old-entry", "made-up"];
+    memory.goals[0].evidenceEntryIds = ["made-up"];
+    const { memory: normalized } = await runWithResponse(memory, [
+      { type: "message", id: "old-entry" },
+    ]);
+    expect(normalized.decisions[0].evidenceEntryIds).toEqual(["old-entry", "u1"]);
+    expect(normalized.goals[0].evidenceEntryIds).toBeUndefined();
+  });
+
+  test("hides closed items from the model once and states the item limits", async () => {
+    const previous = validMemory();
+    previous.goals.push({ id: "goal-2", text: "Old finished goal", status: "completed" });
+    previous.decisions.push({ id: "decision-2", decision: "Old superseded choice", status: "superseded" });
+    previous.openQuestions = [{ id: "q-1", question: "Answered question?", status: "resolved" }];
+    previous.blockers = [{ id: "b-1", text: "Cleared blocker", status: "resolved" }];
+    let body: any;
+    await runWithResponse(emptySemanticMemory(), [
+      { type: "custom", customType: SEMANTIC_MEMORY_CUSTOM_TYPE, data: previous },
+    ], (captured) => { body = captured; });
+    const user = body.messages[1].content;
+    expect(user).toContain("Ship MVP");
+    expect(user).toContain("Use session entries");
+    for (const closed of ["Old finished goal", "Old superseded choice", "Answered question?", "Cleared blocker"]) {
+      expect(user).not.toContain(closed);
+    }
+    expect(body.messages[0].content).toContain("goals 3, decisions 5");
+  });
+
   test("renders fixed Markdown without IDs and omits empty sections", async () => {
     const { rendered } = await runWithResponse(validMemory());
     expect(rendered).toContain(SEMANTIC_SUMMARY_MARKER);

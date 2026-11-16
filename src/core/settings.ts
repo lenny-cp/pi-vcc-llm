@@ -123,7 +123,7 @@ const DEFAULT_SEMANTIC_COMPACTION_SETTINGS: SemanticCompactionSettings = {
   apiKey: "",
   timeoutMs: 30000,
   maxInputChars: 80000,
-  maxOutputTokens: 900,
+  maxOutputTokens: 2000,
   temperature: 0.1,
   disableThinking: true,
   includeToolMetadata: true,
